@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PGA Collection Manager (Local)</title>
+  <link rel="stylesheet" href="./assets/css/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-row">
+      <div class="brand">
+        <div class="brand-text">
+          <h1>Golfer Collection Manager</h1>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a href="#list" id="nav-list" class="nav-link">List</a>
+        <a href="#add" id="nav-add" class="nav-link nav-primary">Add Golfer</a>
+        <a href="#stats" id="nav-stats" class="nav-link">Stats</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="toast-region" aria-live="polite" aria-atomic="true"></section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 id="view-title">Loading…</h2>
+        <div id="panel-actions" class="panel-actions"></div>
+      </div>
+
+      <div id="app"></div>
+    </section>
+  </main>
+
+  <!-- confirms deletion -->
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <h3 id="modal-title">Confirm Delete</h3>
+      <p id="modal-message">Are you sure?</p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn btn-ghost" type="button">Cancel</button>
+        <button id="modal-confirm" class="btn btn-danger" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
