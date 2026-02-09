@@ -12,4 +12,4 @@ Golfer records are stored in a JSON file on the server and all CRUD operations
 modify the file directly. Data persists after refreshes and on different devices.
 
 Loom recording link
-https://www.loom.com/share/891154dbf3d145c0bbf4b310fef8e773
+https://www.loom.com/share/31b1e04b81b54f7ebbf6a5b9d1945998
