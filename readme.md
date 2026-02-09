@@ -1,4 +1,4 @@
-Nathan Kitchens Golfer Collection Projext 2 
+Nathan Kitchens Golfer Collection Project 2 
 
 Netlify Link
 delightful-kringle-ed8679.netlify.app
