@@ -1,70 +1,43 @@
-import { STORAGE_KEY } from "./seed.js";
+import { fetchJson } from "./api.js";
 
-// reads and returns the entire array
-function read() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-// saves the entire array
-function write(records) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-}
+// The browser does NOT own the data in Solo Project 2.
+// All operations go through the backend API.
 
 export const store = {
-  getAll() {
-    return read().sort((a, b) => a.worldRank - b.worldRank);
+  /**
+   * List golfers with paging.
+   * @param {number} page 1-based
+   * @param {number} pageSize fixed at 10 by project requirements
+   */
+  async list(page = 1, pageSize = 10) {
+    return fetchJson(`/golfers?page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`);
   },
 
-  getById(id) {
-    return read().find(r => r.id === id) || null;
+  async getById(id) {
+    return fetchJson(`/golfers/${encodeURIComponent(id)}`);
   },
 
-  // adds a new record and returns it
-  create(record) {
-    const records = read();
-    const now = Date.now();
-    const id = `g_${now}_${Math.floor(Math.random() * 1e9)}`;
-
-    const newRecord = {
-      id,
-      updatedAt: now,
-      ...record
-    };
-
-    records.push(newRecord);
-    write(records);
-    return newRecord;
+  async create(record) {
+    return fetchJson(`/golfers`, {
+      method: "POST",
+      body: JSON.stringify(record)
+    });
   },
 
-  // updates a record by id and returns the updated record
-  update(id, updates) {
-    const records = read();
-    const idx = records.findIndex(r => r.id === id);
-    if (idx === -1) return null;
-
-    records[idx] = {
-      ...records[idx],
-      ...updates,
-      updatedAt: Date.now()
-    };
-
-    write(records);
-    return records[idx];
+  async update(id, updates) {
+    return fetchJson(`/golfers/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(updates)
+    });
   },
 
-  // removes a record by id and will return true if successful
-  remove(id) {
-    const records = read();
-    const next = records.filter(r => r.id !== id);
-    if (next.length === records.length) return false;
-    write(next);
-    return true;
+  async remove(id) {
+    return fetchJson(`/golfers/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    });
+  },
+
+  async stats() {
+    return fetchJson(`/stats`);
   }
 };

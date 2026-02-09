@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PGA Collection Manager (Local)</title>
+  <title>PGA Collection Manager (Cloud)</title>
   <link rel="stylesheet" href="./assets/css/styles.css" />
 </head>
 <body>
@@ -16,7 +16,7 @@
       </div>
 
       <nav class="nav">
-        <a href="#list" id="nav-list" class="nav-link">List</a>
+        <a href="#list?page=1" id="nav-list" class="nav-link">List</a>
         <a href="#add" id="nav-add" class="nav-link nav-primary">Add Golfer</a>
         <a href="#stats" id="nav-stats" class="nav-link">Stats</a>
       </nav>
@@ -48,6 +48,9 @@
     </div>
   </div>
 
+  <script>
+    // window.__API_BASE__ = "https://your-backend.example.com/api";
+  </script>
   <script type="module" src="./assets/js/app.js"></script>
 </body>
 </html>

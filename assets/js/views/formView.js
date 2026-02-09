@@ -8,7 +8,7 @@ const COUNTRIES = [
 // renders the form view for adding or changing golfer
 export function renderFormView({ mode, id }) {
   const isEdit = mode === "edit";
-  const record = isEdit ? store.getById(id) : null;
+  let record = null;
 
   setTitle(isEdit ? "Edit Golfer" : "Add Golfer");
   setPanelActions(
@@ -17,18 +17,13 @@ export function renderFormView({ mode, id }) {
     ])
   );
 
-  if (isEdit && !record) {
-    return el("div", {}, [
-      el("p", { class: "small" }, ["That golfer record was not found."]),
-      el("a", { class: "btn btn-ghost", href: "#list" }, ["Go to List"])
-    ]);
-  }
+  const loading = el("div", { class: "small" }, [isEdit ? "Loading golfer…" : ""]);
 
-  // build the form
+  // build the form (values get filled in for edit after fetch)
   const form = el("form", { class: "form" });
-  const name = fieldText("name", "Name *", record?.name ?? "", "Golfer full name (required)");
+  const name = fieldText("name", "Name *", "", "Golfer full name (required)");
   const country = fieldSelect("country", "Country *", record?.country ?? "USA", COUNTRIES, "3-letter code (required)");
-  const age = fieldNumber("age", "Age *", record?.age ?? 28, { min: 16, max: 80 }, "Range: 16–80");
+  const age = fieldNumber("age", "Age *", 28, { min: 16, max: 80 }, "Range: 16–80");
   const worldRank = fieldNumber("worldRank", "World Rank *", record?.worldRank ?? 50, { min: 1, max: 500 }, "Range: 1–500");
   const winsPga = fieldNumber("winsPga", "PGA Wins *", record?.winsPga ?? 0, { min: 0, max: 200 }, "Must be 0 or higher");
   const majorWins = fieldNumber("majorWins", "Major Wins *", record?.majorWins ?? 0, { min: 0, max: 30 }, "Must be 0 or higher");
@@ -48,7 +43,7 @@ export function renderFormView({ mode, id }) {
     actions
   );
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errorBox.innerHTML = "";
 
@@ -71,22 +66,61 @@ export function renderFormView({ mode, id }) {
     }
 
     if (isEdit) {
-      store.update(record.id, payload);
+      const res = await store.update(id, payload);
+      if (!res.ok) {
+        showServerErrors(res, errorBox);
+        return;
+      }
       toast({ title: "Saved", message: `"${payload.name}" updated.`, variant: "success" });
     } else {
-      store.create(payload);
+      const res = await store.create(payload);
+      if (!res.ok) {
+        showServerErrors(res, errorBox);
+        return;
+      }
       toast({ title: "Created", message: `"${payload.name}" added.`, variant: "success" });
     }
 
-    window.location.hash = "#list";
+    window.location.hash = "#list?page=1";
   });
+
+  // If edit, fetch record and populate fields
+  if (isEdit) {
+    (async () => {
+      const res = await store.getById(id);
+      if (!res.ok) {
+        loading.textContent = "";
+        errorBox.appendChild(el("div", { class: "error" }, [res.error]));
+        return;
+      }
+      record = res.data;
+      name.input.value = record.name ?? "";
+      country.input.value = record.country ?? "USA";
+      age.input.value = String(record.age ?? 28);
+      worldRank.input.value = String(record.worldRank ?? 50);
+      winsPga.input.value = String(record.winsPga ?? 0);
+      majorWins.input.value = String(record.majorWins ?? 0);
+      fedexRank.input.value = record.fedexRank == null ? "" : String(record.fedexRank);
+      loading.textContent = "";
+    })();
+  }
 
   return el("div", {}, [
     el("p", { class: "small" }, [
-      "Required fields are marked with *. Validation enforces numeric ranges and required inputs."
+      "Required fields are marked with *. Validation runs client-side and server-side."
     ]),
+    loading,
     form
   ]);
+}
+
+function showServerErrors(res, errorBox) {
+  const parts = [];
+  if (res.error) parts.push(res.error);
+  if (Array.isArray(res.details) && res.details.length) {
+    parts.push(res.details.join(" "));
+  }
+  errorBox.appendChild(el("div", { class: "error" }, [parts.join(" ") || "Request failed."]));
 }
 
 // validates the payload and returns error messages

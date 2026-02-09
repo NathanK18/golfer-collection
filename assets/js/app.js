@@ -1,5 +1,4 @@
-import { seedIfNeeded } from "./seed.js";
-import { setActiveNav, toast } from "./ui.js";
+import { setActiveNav } from "./ui.js";
 import { renderListView } from "./views/listView.js";
 import { renderFormView } from "./views/formView.js";
 import { renderStatsView } from "./views/statsView.js";
@@ -43,7 +42,9 @@ function render() {
   }
 
   // default to list 
+  const page = Number(params.get("page") || 1);
   mount(renderListView({
+    page: Number.isFinite(page) && page > 0 ? page : 1,
     onNavigateToEdit: (id) => {
       window.location.hash = `#edit?id=${encodeURIComponent(id)}`;
     }
@@ -52,16 +53,7 @@ function render() {
 
 // application bootstrap
 function boot() {
-  const seeded = seedIfNeeded();
-  if (seeded) {
-    toast({
-      title: "Seeded starter data",
-      message: "Loaded 30 golfers into localStorage.",
-      variant: "success"
-    });
-  }
-
-  if (!window.location.hash) window.location.hash = "#list";
+  if (!window.location.hash) window.location.hash = "#list?page=1";
   render();
 
   window.addEventListener("hashchange", render);
