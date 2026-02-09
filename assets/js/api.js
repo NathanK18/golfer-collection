@@ -1,8 +1,3 @@
-// Simple API client for the Flask backend.
-//
-// In production, set `window.__API_BASE__` in index.html to your deployed backend,
-// e.g. "https://your-backend.example.com/api".
-
 export const API_BASE = window.__API_BASE__ || "http://localhost:5050/api";
 
 async function readJsonSafe(resp) {
