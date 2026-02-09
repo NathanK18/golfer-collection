@@ -12,10 +12,15 @@ from flask_cors import CORS
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+
+# Allow host to override where JSON is stored (important for PythonAnywhere)
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
+
+DATA_DIR = os.path.abspath(os.path.expanduser(DATA_DIR))
+
 DATA_FILE = os.path.join(DATA_DIR, "golfers.json")
 
-PAGE_SIZE = 10  # required by assignment
+PAGE_SIZE = 10  
 
 
 app = Flask(__name__)
