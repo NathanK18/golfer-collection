@@ -71,6 +71,7 @@ def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]
     wins_pga = _to_int(payload.get("winsPga"))
     major_wins = _to_int(payload.get("majorWins"))
     fedex_rank = payload.get("fedexRank")
+    image_url = (payload.get("imageUrl") or "").strip()
     fedex_rank = None if fedex_rank in ("", "null") else _to_int(fedex_rank)
 
     if not name:
@@ -88,6 +89,8 @@ def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]
         errors.append("Major Wins must be 0 or higher.")
     if fedex_rank is not None and (fedex_rank < 1 or fedex_rank > 250):
         errors.append("FedEx Rank must be 1–250 if provided.")
+    if not image_url:
+        errors.append("Image URL is required.")
 
     normalized = {
         "name": name,
@@ -97,6 +100,7 @@ def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]
         "winsPga": wins_pga,
         "majorWins": major_wins,
         "fedexRank": fedex_rank,
+        "imageUrl": image_url,
     }
     return (len(errors) == 0), errors, normalized
 
@@ -104,7 +108,7 @@ def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]
 def _seed_records() -> List[Dict[str, Any]]:
     now = _now_ms()
 
-    def mk(name: str, country: str, age: int, world_rank: int, wins_pga: int, major_wins: int, fedex_rank: Optional[int]):
+    def mk(name: str, country: str, age: int, world_rank: int, wins_pga: int, major_wins: int, fedex_rank: Optional[int], image_url: str):
         return {
             "id": f"g_{uuid.uuid4().hex}",
             "name": name,
@@ -115,10 +119,11 @@ def _seed_records() -> List[Dict[str, Any]]:
             "majorWins": major_wins,
             "fedexRank": fedex_rank,
             "updatedAt": now,
+            "imageUrl": image_url,
         }
 
     return [
-        mk("Scottie Scheffler", "USA", 27, 1, 9, 2, 1),
+        mk("Scottie Scheffler", "USA", 27, 1, 9, 2, 1, "https://placehold.co/300x200?text=Scheffler"),
         mk("Rory McIlroy", "NIR", 34, 2, 24, 4, 6),
         mk("Jon Rahm", "ESP", 29, 3, 11, 2, 9),
         mk("Xander Schauffele", "USA", 30, 4, 7, 0, 3),
@@ -152,6 +157,7 @@ def _seed_records() -> List[Dict[str, Any]]:
 
 
 def init_db_and_seed() -> None:
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     with SessionLocal() as db:
@@ -197,6 +203,7 @@ def golfer_to_dict(g: Golfer) -> Dict[str, Any]:
         "majorWins": g.major_wins,
         "fedexRank": g.fedex_rank,
         "updatedAt": g.updated_at,
+        "imageUrl": g.image_url,
     }
 
 
@@ -276,6 +283,7 @@ def create_golfer():
                 wins_pga=normalized["winsPga"],
                 major_wins=normalized["majorWins"],
                 fedex_rank=normalized["fedexRank"],
+                image_url=normalized["imageUrl"],
                 updated_at=now,
             )
             db.add(g)
@@ -306,6 +314,7 @@ def update_golfer(golfer_id: str):
             g.wins_pga = normalized["winsPga"]
             g.major_wins = normalized["majorWins"]
             g.fedex_rank = normalized["fedexRank"]
+            g.image_url = normalized["imageUrl"]
             g.updated_at = _now_ms()
 
             db.commit()

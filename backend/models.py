@@ -17,4 +17,6 @@ class Golfer(Base):
     major_wins: Mapped[int] = mapped_column(Integer, nullable=False)
     fedex_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
