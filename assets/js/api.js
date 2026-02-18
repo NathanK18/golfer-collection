@@ -1,4 +1,4 @@
-export const API_BASE = window.__API_BASE__ || "http://localhost:5050/api";
+export const API_BASE = "/api";
 
 async function readJsonSafe(resp) {
   const text = await resp.text();

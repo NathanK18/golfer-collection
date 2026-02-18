@@ -7,28 +7,43 @@ import uuid
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Allow host to override where JSON is stored
 DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
-
 DATA_DIR = os.path.abspath(os.path.expanduser(DATA_DIR))
-
 DATA_FILE = os.path.join(DATA_DIR, "golfers.json")
 
-PAGE_SIZE = 10  
-
+PAGE_SIZE = 10
 
 app = Flask(__name__)
 CORS(app)
 
 _lock = Lock()
 
+# -----------------------------
+# Frontend serving (single-domain app)
+# -----------------------------
+FRONTEND_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
+ASSETS_DIR = os.path.join(FRONTEND_DIR, "assets")
 
+
+@app.route("/")
+def serve_index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.route("/assets/<path:filename>")
+def serve_assets(filename):
+    return send_from_directory(ASSETS_DIR, filename)
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -37,7 +52,15 @@ def _seed_records() -> List[Dict[str, Any]]:
     """Starter data: minimum 30 records."""
     now = _now_ms()
 
-    def mk(name: str, country: str, age: int, world_rank: int, wins_pga: int, major_wins: int, fedex_rank: Optional[int]):
+    def mk(
+        name: str,
+        country: str,
+        age: int,
+        world_rank: int,
+        wins_pga: int,
+        major_wins: int,
+        fedex_rank: Optional[int],
+    ):
         return {
             "id": f"g_{uuid.uuid4().hex}",
             "name": name,
@@ -102,7 +125,6 @@ def _ensure_datafile() -> None:
 
     if len(data) < 30:
         seed = _seed_records()
-        # Keep existing records, add missing seed records
         data = data + seed[: max(0, 30 - len(data))]
         _write_all(data)
 
@@ -184,6 +206,9 @@ def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]
     return (len(errors) == 0), errors, normalized
 
 
+# -----------------------------
+# API Routes
+# -----------------------------
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True})
@@ -193,27 +218,21 @@ def health():
 def list_golfers():
     page = _to_int(request.args.get("page")) or 1
     page_size = _to_int(request.args.get("pageSize")) or PAGE_SIZE
-    page_size = PAGE_SIZE  # enforce
+    page_size = PAGE_SIZE  # enforce (your current behavior)
 
     with _lock:
         records = _sorted(_read_all())
 
     total = len(records)
     total_pages = max(1, (total + page_size - 1) // page_size)
-    # clamp page to valid range
+
     page = min(max(1, page), total_pages)
     start = (page - 1) * page_size
     end = start + page_size
     items = records[start:end]
 
     return jsonify(
-        {
-            "items": items,
-            "page": page,
-            "pageSize": page_size,
-            "total": total,
-            "totalPages": total_pages,
-        }
+        {"items": items, "page": page, "pageSize": page_size, "total": total, "totalPages": total_pages}
     )
 
 
@@ -234,11 +253,7 @@ def create_golfer():
     if not ok:
         return _error(400, "Validation failed.", errors)
 
-    new_record = {
-        "id": f"g_{uuid.uuid4().hex}",
-        "updatedAt": _now_ms(),
-        **normalized,
-    }
+    new_record = {"id": f"g_{uuid.uuid4().hex}", "updatedAt": _now_ms(), **normalized}
 
     with _lock:
         records = _read_all()
@@ -285,19 +300,17 @@ def stats():
         records = _read_all()
 
     total = len(records)
-    avg_world_rank = (
-        sum(int(r.get("worldRank") or 0) for r in records) / total if total else 0
-    )
+    avg_world_rank = sum(int(r.get("worldRank") or 0) for r in records) / total if total else 0
     total_wins = sum(int(r.get("winsPga") or 0) for r in records)
     major_winners = sum(1 for r in records if int(r.get("majorWins") or 0) > 0)
 
-    # most common country
     counts: Dict[str, int] = {}
     for r in records:
         c = (r.get("country") or "").strip()
         if not c:
             continue
         counts[c] = counts.get(c, 0) + 1
+
     top_country = None
     top_country_count = 0
     for c, n in counts.items():
@@ -318,5 +331,4 @@ def stats():
 
 
 if __name__ == "__main__":
-    # Local dev: `python app.py`
     app.run(host="0.0.0.0", port=5050, debug=True)
