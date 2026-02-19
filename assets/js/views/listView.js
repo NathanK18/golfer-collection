@@ -20,7 +20,6 @@ export function renderListView({ onNavigateToEdit, page = 1 }) {
 
   const wrap = el("div", {}, [tableWrap, pagerWrap]);
 
-  // load data async
   (async () => {
     const res = await store.list(page, PAGE_SIZE);
     if (!res.ok) {
@@ -42,24 +41,42 @@ export function renderListView({ onNavigateToEdit, page = 1 }) {
   return wrap;
 }
 
-// builds the table element
 function buildTable(records, onNavigateToEdit, currentPage) {
   const table = el("table");
   const thead = el("thead");
   const trh = el("tr");
-  const headers = ["Name", "Country", "Age", "World Rank", "PGA Wins", "Major Wins", "FedEx Rank", "Actions"];
+
+  
+  const headers = ["Image", "Name", "Country", "Age", "World Rank", "PGA Wins", "Major Wins", "FedEx Rank", "Actions"];
   headers.forEach(h => trh.appendChild(el("th", {}, [h])));
   thead.appendChild(trh);
 
   const tbody = el("tbody");
+
   if (records.length === 0) {
     const tr = el("tr", {}, [
-      el("td", { colspan: "8" }, ["No golfers yet. Click “Add Golfer” to create one."])
+
+      el("td", { colspan: "9" }, ["No golfers yet. Click “Add Golfer” to create one."])
     ]);
     tbody.appendChild(tr);
   } else {
     for (const r of records) {
+  
+      const img = el("img", {
+        src: r.imageUrl || "/assets/images/placeholder.png",
+        alt: r.name ? `${r.name} photo` : "Golfer photo",
+        loading: "lazy",
+        style: "width:64px; height:48px; object-fit:cover; border-radius:6px; display:block;"
+      });
+      img.onerror = () => {
+        img.onerror = null; // prevent infinite loop if placeholder missing
+        img.src = "/assets/images/placeholder.png";
+      };
+
       const tr = el("tr", {}, [
+  
+        el("td", {}, [img]),
+
         el("td", {}, [r.name]),
         el("td", {}, [r.country]),
         el("td", {}, [String(r.age)]),
@@ -93,13 +110,13 @@ function buildTable(records, onNavigateToEdit, currentPage) {
 
               toast({ title: "Deleted", message: `"${r.name}" was removed.`, variant: "danger" });
 
-              // Stay on the same page if possible.
               window.location.hash = `#list?page=${encodeURIComponent(currentPage)}`;
               window.dispatchEvent(new HashChangeEvent("hashchange"));
             }
           }, ["Delete"])
         ])
       ]);
+
       tbody.appendChild(tr);
     }
   }
@@ -157,5 +174,3 @@ function buildPager({ currentPage, totalPages }) {
     [prevLink, nextLink, indicator]
   );
 }
-
-
