@@ -6,6 +6,51 @@ export function qsa(sel, root = document) {
   return Array.from(root.querySelectorAll(sel));
 }
 
+/*
+  Create an element quickly:
+  el("div", { className: "card" }, "Hello")
+  el("a", { href: "#list" }, "Back")
+*/
+export function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "style" && v && typeof v === "object") {
+      Object.assign(node.style, v);
+      continue;
+    }
+    if (k.startsWith("on") && typeof v === "function") {
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+      continue;
+    }
+    if (k in node) {
+      node[k] = v;
+    } else {
+      node.setAttribute(k, String(v));
+    }
+  }
+
+  for (const child of children) {
+    if (child === null || child === undefined || child === false) continue;
+    if (Array.isArray(child)) {
+      child.forEach((c) => appendChild(node, c));
+    } else {
+      appendChild(node, child);
+    }
+  }
+
+  return node;
+}
+
+function appendChild(parent, child) {
+  if (child === null || child === undefined || child === false) return;
+  if (child instanceof Node) {
+    parent.appendChild(child);
+  } else {
+    parent.appendChild(document.createTextNode(String(child)));
+  }
+}
+
 export function htmlToEl(html) {
   const t = document.createElement("template");
   t.innerHTML = html.trim();
@@ -13,12 +58,12 @@ export function htmlToEl(html) {
 }
 
 export function setFlash(message, type = "info") {
-  const el = qs("#flash");
-  if (!el) return;
+  const elNode = qs("#flash");
+  if (!elNode) return;
 
-  el.textContent = message || "";
-  el.className = `flash ${type}`;
-  el.style.display = message ? "block" : "none";
+  elNode.textContent = message || "";
+  elNode.className = `flash ${type}`;
+  elNode.style.display = message ? "block" : "none";
 }
 
 export function getCookie(name) {
