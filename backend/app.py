@@ -143,11 +143,7 @@ def seed_db_if_needed():
 def create_app():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-    app = Flask(
-        __name__,
-        static_folder=project_root,
-        static_url_path="",
-    )
+    app = Flask(__name__)
     CORS(app)
 
     with engine.begin() as conn:
@@ -160,17 +156,17 @@ def create_app():
 
     @app.get("/")
     def index():
-        return send_from_directory(app.static_folder, "index.html")
+        return send_from_directory(project_root, "index.html")
 
     @app.get("/assets/<path:filename>")
     def assets(filename: str):
-        return send_from_directory(os.path.join(app.static_folder, "assets"), filename)
+        return send_from_directory(os.path.join(project_root, "assets"), filename)
 
     @app.get("/favicon.ico")
     def favicon():
-        fav_path = os.path.join(app.static_folder, "favicon.ico")
+        fav_path = os.path.join(project_root, "favicon.ico")
         if os.path.exists(fav_path):
-            return send_from_directory(app.static_folder, "favicon.ico")
+            return send_from_directory(project_root, "favicon.ico")
         return ("", 204)
 
     @app.get("/api/health")
@@ -217,7 +213,6 @@ def create_app():
 
         total_pages = max(1, int(math.ceil(total / page_size))) if page_size > 0 else 1
 
-        # Compatibility: return BOTH shapes (top-level + meta)
         return jsonify(
             {
                 "items": [golfer_to_dict(g) for g in rows],
@@ -337,7 +332,6 @@ def create_app():
             top_country = top_country_row[0] if top_country_row else None
             top_country_count = int(top_country_row[1]) if top_country_row else 0
 
-        # Compatibility: return BOTH shapes used by different frontend versions
         return jsonify(
             {
                 "total": total,
