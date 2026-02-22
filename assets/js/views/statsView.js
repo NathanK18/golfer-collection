@@ -6,6 +6,10 @@ export const statsView = {
     const app = qs("#app");
     app.innerHTML = "";
 
+    // Update panel header title (index.html has #view-title)
+    const viewTitle = document.getElementById("view-title");
+    if (viewTitle) viewTitle.textContent = "Stats";
+
     let stats;
     try {
       stats = await store.stats();
@@ -45,6 +49,16 @@ export const statsView = {
                 ? "-"
                 : Number(stats.avgWorldRank).toFixed(2)
             }</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-label">Total major wins</div>
+            <div class="kpi-value">${stats.totalMajorWins ?? "-"}</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-label">Total PGA wins</div>
+            <div class="kpi-value">${stats.totalPgaWins ?? "-"}</div>
           </div>
         </div>
       </section>

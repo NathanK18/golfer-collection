@@ -325,42 +325,48 @@ def create_app():
             session.commit()
             return jsonify({"ok": True})
 
-    @app.get("/api/stats")
-    def stats():
-        with SessionLocal() as session:
-            total = session.execute(select(func.count()).select_from(Golfer)).scalar_one()
+@app.get("/api/stats")
+def stats():
+    with SessionLocal() as session:
+        total = session.execute(select(func.count()).select_from(Golfer)).scalar_one()
 
-            avg_world_rank = session.execute(select(func.avg(Golfer.world_rank))).scalar_one()
-            avg_world_rank_val = float(avg_world_rank) if avg_world_rank is not None else None
+        avg_world_rank = session.execute(select(func.avg(Golfer.world_rank))).scalar_one()
+        avg_world_rank_val = float(avg_world_rank) if avg_world_rank is not None else None
 
-            total_wins = session.execute(select(func.sum(Golfer.wins_pga))).scalar_one()
-            total_wins_val = int(total_wins) if total_wins is not None else 0
+        # Total PGA wins (already in your code)
+        total_wins = session.execute(select(func.sum(Golfer.wins_pga))).scalar_one()
+        total_wins_val = int(total_wins) if total_wins is not None else 0
 
-            major_winners = session.execute(
-                select(func.count()).select_from(Golfer).where(Golfer.major_wins > 0)
-            ).scalar_one()
+        # ✅ NEW: Total major wins (sum across all golfers)
+        total_major_wins = session.execute(select(func.sum(Golfer.major_wins))).scalar_one()
+        total_major_wins_val = int(total_major_wins) if total_major_wins is not None else 0
 
-            top_country_row = session.execute(
-                select(Golfer.country, func.count().label("c"))
-                .group_by(Golfer.country)
-                .order_by(func.count().desc())
-                .limit(1)
-            ).first()
+        major_winners = session.execute(
+            select(func.count()).select_from(Golfer).where(Golfer.major_wins > 0)
+        ).scalar_one()
 
-            top_country = top_country_row[0] if top_country_row else None
-            top_country_count = int(top_country_row[1]) if top_country_row else 0
+        top_country_row = session.execute(
+            select(Golfer.country, func.count().label("c"))
+            .group_by(Golfer.country)
+            .order_by(func.count().desc())
+            .limit(1)
+        ).first()
 
-        return jsonify(
-            {
-                "total": total,
-                "totalRecords": total,
-                "avgWorldRank": avg_world_rank_val,
-                "totalWins": total_wins_val,
-                "majorWinners": major_winners,
-                "topCountry": top_country,
-                "topCountryCount": top_country_count,
-            }
-        )
+        top_country = top_country_row[0] if top_country_row else None
+        top_country_count = int(top_country_row[1]) if top_country_row else 0
+
+    return jsonify(
+        {
+            "total": total,
+            "totalRecords": total,
+            "avgWorldRank": avg_world_rank_val,
+            "totalWins": total_wins_val,
+            "totalMajorWins": total_major_wins_val, 
+            "majorWinners": major_winners,
+            "topCountry": top_country,
+            "topCountryCount": top_country_count,
+        }
+    )
 
     return app
 
