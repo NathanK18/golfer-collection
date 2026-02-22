@@ -146,11 +146,11 @@ def create_app():
     app = Flask(__name__)
     CORS(app)
 
-    with engine.begin() as conn:
-        reset = (os.environ.get("RESET_DB") or "").strip() == "1"
-        if reset:
-            Base.metadata.drop_all(bind=conn)
-        Base.metadata.create_all(bind=conn)
+    #with engine.begin() as conn:
+     #   reset = (os.environ.get("RESET_DB") or "").strip() == "1"
+     #   if reset:
+      #      Base.metadata.drop_all(bind=conn)
+      #  Base.metadata.create_all(bind=conn) 
 
     seed_db_if_needed()
 
