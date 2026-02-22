@@ -2,43 +2,26 @@ import { api } from "./api.js";
 
 export const store = {
   async list(params = {}) {
-    const {
-      page = 1,
-      pageSize = 10,
-      q = "",
-      country = "",
-      sort = "name",
-      dir = "asc",
-    } = params;
-
-    const query = new URLSearchParams();
-    query.set("page", String(page));
-    query.set("pageSize", String(pageSize));
-    if (q) query.set("q", q);
-    if (country) query.set("country", country);
-    if (sort) query.set("sort", sort);
-    if (dir) query.set("dir", dir);
-
-    return api.get(`/api/golfers?${query.toString()}`);
+    return (await api.get("/golfers", { params })).data;
   },
 
   async get(id) {
-    return api.get(`/api/golfers/${id}`);
+    return (await api.get(`/golfers/${id}`)).data;
   },
 
   async create(payload) {
-    return api.post(`/api/golfers`, payload);
+    return (await api.post("/golfers", payload)).data;
   },
 
   async update(id, payload) {
-    return api.put(`/api/golfers/${id}`, payload);
+    return (await api.put(`/golfers/${id}`, payload)).data;
   },
 
   async remove(id) {
-    return api.del(`/api/golfers/${id}`);
+    return (await api.delete(`/golfers/${id}`)).data;
   },
 
   async stats() {
-    return api.get(`/api/stats`);
+    return (await api.get("/stats")).data;
   },
 };

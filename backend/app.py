@@ -91,8 +91,9 @@ def validate_and_build_golfer_fields(data: Dict[str, Any]) -> Optional[Dict[str,
         return None
     if not country:
         return None
+
     if not image_url:
-        return None
+        image_url = "/assets/images/placeholder.png"
 
     if age is None or world_rank is None or wins_pga is None or major_wins is None:
         return None
