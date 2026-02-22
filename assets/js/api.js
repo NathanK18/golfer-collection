@@ -1,36 +1,41 @@
-export const API_BASE = "/api";
+const BASE = "";
 
-async function readJsonSafe(resp) {
-  const text = await resp.text();
-  try {
-    return text ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Fetch JSON with consistent error handling.
- * Returns { ok: true, data } OR { ok: false, status, error, details }.
- */
-export async function fetchJson(path, options = {}) {
-  const url = `${API_BASE}${path}`;
-  const resp = await fetch(url, {
+async function request(method, url, data) {
+  const options = {
+    method,
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {})
     },
-    ...options
-  });
+  };
 
-  const body = await readJsonSafe(resp);
-
-  if (resp.ok) {
-    return { ok: true, data: body };
+  if (data) {
+    options.body = JSON.stringify(data);
   }
 
-  // Backend errors should follow: { error: "...", details?: [...] }
-  const error = body?.error || `Request failed (${resp.status})`;
-  const details = body?.details || null;
-  return { ok: false, status: resp.status, error, details };
+  const res = await fetch(BASE + url, options);
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Request failed: ${res.status}`);
+  }
+
+  return res.json();
 }
+
+export const api = {
+  get(url) {
+    return request("GET", url);
+  },
+
+  post(url, data) {
+    return request("POST", url, data);
+  },
+
+  put(url, data) {
+    return request("PUT", url, data);
+  },
+
+  del(url) {
+    return request("DELETE", url);
+  },
+};
