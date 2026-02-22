@@ -6,7 +6,6 @@ export const statsView = {
     const app = qs("#app");
     app.innerHTML = "";
 
-    // Update panel header title (index.html has #view-title)
     const viewTitle = document.getElementById("view-title");
     if (viewTitle) viewTitle.textContent = "Stats";
 
@@ -29,8 +28,6 @@ export const statsView = {
 
     const root = htmlToEl(`
       <section>
-        <h2>Stats</h2>
-
         <div class="kpis">
           <div class="kpi">
             <div class="kpi-label">Total records</div>

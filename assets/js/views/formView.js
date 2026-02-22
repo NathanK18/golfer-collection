@@ -32,8 +32,6 @@ export const formView = {
 
     const el = htmlToEl(`
       <div class="form-container">
-        <h2>${mode === "edit" ? "Edit Golfer" : "Add Golfer"}</h2>
-
         <form id="golfer-form" class="form">
           <label>
             Name
@@ -106,7 +104,6 @@ export const formView = {
         worldRank: Number(formData.get("worldRank")),
         winsPga: Number(formData.get("winsPga")),
         majorWins: Number(formData.get("majorWins")),
-        // allow blank fedexRank to be omitted or null
         fedexRank:
           String(formData.get("fedexRank") || "").trim() === ""
             ? null
@@ -114,11 +111,11 @@ export const formView = {
         imageUrl: String(formData.get("imageUrl") || "").trim(),
       };
 
-      // Basic client-side validation to avoid immediate 400s
       if (!payload.name || !payload.country) {
         setFlash("Name and country are required.", "error");
         return;
       }
+
       const requiredNums = ["age", "worldRank", "winsPga", "majorWins"];
       for (const k of requiredNums) {
         if (!Number.isFinite(payload[k])) {
