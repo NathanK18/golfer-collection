@@ -30,7 +30,13 @@ function buildHash(path, params) {
 export const listView = {
   async render({ query }) {
     const app = qs("#app");
-    app.innerHTML = "";
+
+    // Show immediate loading feedback
+    app.innerHTML = `<p class="muted">Loading...</p>`;
+
+    // Update page title in the panel header (index.html has #view-title)
+    const viewTitle = document.getElementById("view-title");
+    if (viewTitle) viewTitle.textContent = "Loading…";
 
     const page = Math.max(1, Number(query.get("page") || 1));
 
@@ -79,10 +85,12 @@ export const listView = {
           <div class="page-size">
             <label for="pageSizeSelect">Page size</label>
             <select id="pageSizeSelect" class="input input-sm">
-              ${ALLOWED_PAGE_SIZES.map((n) => {
-                const selected = n === pageSize ? "selected" : "";
-                return `<option value="${n}" ${selected}>${n}</option>`;
-              }).join("")}
+              ${ALLOWED_PAGE_SIZES
+                .map((n) => {
+                  const selected = n === pageSize ? "selected" : "";
+                  return `<option value="${n}" ${selected}>${n}</option>`;
+                })
+                .join("")}
             </select>
           </div>
         </div>
@@ -92,7 +100,8 @@ export const listView = {
       </section>
     `);
 
-    app.appendChild(root);
+    // Replace the app contents cleanly (prevents leftover text/nodes)
+    app.replaceChildren(root);
 
     // Fetch data
     let data;
@@ -100,8 +109,11 @@ export const listView = {
       data = await store.list({ page, pageSize, q, country, sort, dir });
     } catch (e) {
       setFlash("Failed to load golfers. Please try again.", "error");
+      if (viewTitle) viewTitle.textContent = "Golfer List";
       return;
     }
+
+    if (viewTitle) viewTitle.textContent = "Golfer List";
 
     const items = data.items || [];
     const meta = data.meta || {};
@@ -273,7 +285,9 @@ function renderPager({ pagerEl, page, pageSize, total, q, country, sort, dir }) 
 
 function option(value, label, current) {
   const sel = value === current ? "selected" : "";
-  return `<option value="${escapeHtml(value)}" ${sel}>${escapeHtml(label)}</option>`;
+  return `<option value="${escapeHtml(value)}" ${sel}>${escapeHtml(
+    label
+  )}</option>`;
 }
 
 function fmt(v) {
