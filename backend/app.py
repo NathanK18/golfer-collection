@@ -1,13 +1,11 @@
 import os
 import json
 import time
-from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from sqlalchemy import select, func, or_
-from sqlalchemy.orm import Session
 
 from db import engine, SessionLocal
 from models import Base, Golfer
@@ -55,7 +53,6 @@ def normalize_page_size(v) -> int:
 
 
 def golfer_to_dict(g: Golfer) -> Dict[str, Any]:
-    # Output camelCase to match the frontend
     return {
         "id": g.id,
         "name": g.name,
@@ -94,7 +91,6 @@ def validate_and_build_golfer_fields(data: Dict[str, Any]) -> Optional[Dict[str,
     if not image_url:
         return None
 
-    # Your models.py marks these as nullable=False, so enforce them.
     if age is None or world_rank is None or wins_pga is None or major_wins is None:
         return None
 
@@ -124,15 +120,18 @@ def seed_db_if_needed():
         with open(seed_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # Accept either camelCase or snake_case keys in the seed file
         for item in data:
             fields = validate_and_build_golfer_fields(item)
             if not fields:
-                # Skip invalid seed rows rather than crashing production startup
                 continue
 
             g = Golfer(
-                id=str(item.get("id") or item.get("ID") or item.get("_id") or os.urandom(8).hex()),
+                id=str(
+                    item.get("id")
+                    or item.get("ID")
+                    or item.get("_id")
+                    or os.urandom(8).hex()
+                ),
                 **fields,
             )
             session.add(g)
@@ -141,7 +140,13 @@ def seed_db_if_needed():
 
 
 def create_app():
-    app = Flask(__name__)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+    app = Flask(
+        __name__,
+        static_folder=project_root,
+        static_url_path="",
+    )
     CORS(app)
 
     with engine.begin() as conn:
@@ -151,6 +156,21 @@ def create_app():
         Base.metadata.create_all(bind=conn)
 
     seed_db_if_needed()
+
+    @app.get("/")
+    def index():
+        return send_from_directory(app.static_folder, "index.html")
+
+    @app.get("/assets/<path:filename>")
+    def assets(filename: str):
+        return send_from_directory(os.path.join(app.static_folder, "assets"), filename)
+
+    @app.get("/favicon.ico")
+    def favicon():
+        fav_path = os.path.join(app.static_folder, "favicon.ico")
+        if os.path.exists(fav_path):
+            return send_from_directory(app.static_folder, "favicon.ico")
+        return ("", 204)
 
     @app.get("/api/health")
     def health():
@@ -175,7 +195,9 @@ def create_app():
 
             if q:
                 like = f"%{q}%"
-                stmt = stmt.where(or_(Golfer.name.ilike(like), Golfer.country.ilike(like)))
+                stmt = stmt.where(
+                    or_(Golfer.name.ilike(like), Golfer.country.ilike(like))
+                )
 
             if country:
                 stmt = stmt.where(Golfer.country == country)
@@ -286,7 +308,6 @@ def create_app():
     def stats():
         with SessionLocal() as session:
             total = session.execute(select(func.count()).select_from(Golfer)).scalar_one()
-
             avg_world_rank = session.execute(select(func.avg(Golfer.world_rank))).scalar_one()
             avg_world_rank_val = float(avg_world_rank) if avg_world_rank is not None else None
 
