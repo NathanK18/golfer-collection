@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import math
 from typing import Any, Dict, Optional
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -91,6 +92,7 @@ def validate_and_build_golfer_fields(data: Dict[str, Any]) -> Optional[Dict[str,
     if not image_url:
         return None
 
+    # These are nullable=False in your models.py
     if age is None or world_rank is None or wins_pga is None or major_wins is None:
         return None
 
@@ -215,19 +217,16 @@ def create_app():
 
             rows = session.execute(stmt).scalars().all()
 
+        total_pages = max(1, int(math.ceil(total / page_size))) if page_size > 0 else 1
+
+        # Important: this shape matches your current frontend
         return jsonify(
             {
                 "items": [golfer_to_dict(g) for g in rows],
-                "meta": {
-                    "page": page,
-                    "pageSize": page_size,
-                    "total": total,
-                    "q": q,
-                    "country": country,
-                    "sort": sort_key,
-                    "dir": sort_dir,
-                    "allowedPageSizes": sorted(list(ALLOWED_PAGE_SIZES)),
-                },
+                "total": total,
+                "totalPages": total_pages,
+                "page": page,
+                "pageSize": page_size,
             }
         )
 
@@ -308,13 +307,36 @@ def create_app():
     def stats():
         with SessionLocal() as session:
             total = session.execute(select(func.count()).select_from(Golfer)).scalar_one()
+
             avg_world_rank = session.execute(select(func.avg(Golfer.world_rank))).scalar_one()
             avg_world_rank_val = float(avg_world_rank) if avg_world_rank is not None else None
 
+            total_wins = session.execute(select(func.sum(Golfer.wins_pga))).scalar_one()
+            total_wins_val = int(total_wins) if total_wins is not None else 0
+
+            major_winners = session.execute(
+                select(func.count()).select_from(Golfer).where(Golfer.major_wins > 0)
+            ).scalar_one()
+
+            top_country_row = session.execute(
+                select(Golfer.country, func.count().label("c"))
+                .group_by(Golfer.country)
+                .order_by(func.count().desc())
+                .limit(1)
+            ).first()
+
+            top_country = top_country_row[0] if top_country_row else None
+            top_country_count = int(top_country_row[1]) if top_country_row else 0
+
+        # Important: this shape matches your current frontend
         return jsonify(
             {
-                "totalRecords": total,
+                "total": total,
                 "avgWorldRank": avg_world_rank_val,
+                "totalWins": total_wins_val,
+                "majorWinners": major_winners,
+                "topCountry": top_country,
+                "topCountryCount": top_country_count,
             }
         )
 
