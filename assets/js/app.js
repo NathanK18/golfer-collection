@@ -1,62 +1,51 @@
-import { setActiveNav } from "./ui.js";
-import { renderListView } from "./views/listView.js";
-import { renderFormView } from "./views/formView.js";
-import { renderStatsView } from "./views/statsView.js";
+import { qs, setFlash } from "./ui.js";
+import { listView } from "./views/listView.js";
+import { statsView } from "./views/statsView.js";
+import { formView } from "./views/formView.js";
 
-const appRoot = document.getElementById("app");
-
-// parse the current route from the URL
-function parseRoute() {
-  const hash = window.location.hash || "#list";
-  const [path, queryString] = hash.split("?");
-  const params = new URLSearchParams(queryString || "");
-
-  return { hash, path, params };
+function parseHash() {
+  const raw = window.location.hash.replace(/^#/, "");
+  const [path, queryStr] = raw.split("?");
+  const query = new URLSearchParams(queryStr || "");
+  return { path: path || "list", query };
 }
 
-function mount(node) {
-  if (!appRoot) return;
-  appRoot.innerHTML = "";
-  appRoot.appendChild(node);
-}
+async function route() {
+  setFlash("");
 
-// main render function
-function render() {
-  const { hash, path, params } = parseRoute();
-  setActiveNav(path);
+  const { path, query } = parseHash();
 
-  if (path === "#add") {
-    mount(renderFormView({ mode: "add" }));
+  // Nav active state
+  const navLinks = document.querySelectorAll("nav a");
+  navLinks.forEach((a) => a.classList.remove("active"));
+
+  if (path.startsWith("stats")) {
+    const a = qs('nav a[href="#stats"]');
+    if (a) a.classList.add("active");
+    await statsView.render();
     return;
   }
 
-  if (path === "#edit") {
-    const id = params.get("id");
-    mount(renderFormView({ mode: "edit", id }));
+  if (path.startsWith("add")) {
+    const a = qs('nav a[href="#add"]');
+    if (a) a.classList.add("active");
+    await formView.render({ mode: "add" });
     return;
   }
 
-  if (path === "#stats") {
-    mount(renderStatsView());
+  if (path.startsWith("edit/")) {
+    const a = qs('nav a[href="#list"]');
+    if (a) a.classList.add("active");
+    const id = path.split("/")[1];
+    await formView.render({ mode: "edit", id });
     return;
   }
 
-  // default to list 
-  const page = Number(params.get("page") || 1);
-  mount(renderListView({
-    page: Number.isFinite(page) && page > 0 ? page : 1,
-    onNavigateToEdit: (id) => {
-      window.location.hash = `#edit?id=${encodeURIComponent(id)}`;
-    }
-  }));
+  // Default: list
+  const a = qs('nav a[href="#list"]');
+  if (a) a.classList.add("active");
+  await listView.render({ query });
 }
 
-// application bootstrap
-function boot() {
-  if (!window.location.hash) window.location.hash = "#list?page=1";
-  render();
-
-  window.addEventListener("hashchange", render);
-}
-
-boot();
+window.addEventListener("hashchange", route);
+window.addEventListener("DOMContentLoaded", route);

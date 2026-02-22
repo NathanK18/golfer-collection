@@ -1,176 +1,291 @@
+import { htmlToEl, qs, setFlash, getCookie, setCookie } from "../ui.js";
 import { store } from "../store.js";
-import { el, confirmModal, toast, setTitle, setPanelActions, formatNumber } from "../ui.js";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE_COOKIE = "pageSize";
+const ALLOWED_PAGE_SIZES = [5, 10, 20, 50];
 
-export function renderListView({ onNavigateToEdit, page = 1 }) {
-  setTitle("List View — All Golfers");
+function clampPageSize(ps) {
+  const n = Number(ps);
+  if (!Number.isFinite(n)) return 10;
+  if (!ALLOWED_PAGE_SIZES.includes(n)) return 10;
+  return n;
+}
 
-  const recordsBadge = el("span", { class: "badge" }, ["Records: …"]);
-  const actions = el("div", {}, [
-    recordsBadge,
-    el("a", { class: "btn btn-success btn-sm", href: "#add" }, ["+ Add Golfer"])
-  ]);
-  setPanelActions(actions);
+function safeImg(imgEl) {
+  imgEl.addEventListener("error", () => {
+    imgEl.src = "assets/images/placeholder.png";
+  });
+}
 
-  const tableWrap = el("div", { class: "table-wrap" }, [
-    el("div", { class: "small" }, ["Loading golfers…"])
-  ]);
-  const pagerWrap = el("div", { style: "margin-top:12px;" });
+function buildHash(path, params) {
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    usp.set(k, String(v));
+  }
+  const qs = usp.toString();
+  return `#${path}${qs ? `?${qs}` : ""}`;
+}
 
-  const wrap = el("div", {}, [tableWrap, pagerWrap]);
+export const listView = {
+  async render({ query }) {
+    const app = qs("#app");
+    app.innerHTML = "";
 
-  (async () => {
-    const res = await store.list(page, PAGE_SIZE);
-    if (!res.ok) {
-      tableWrap.innerHTML = "";
-      tableWrap.appendChild(el("div", { class: "error" }, [res.error]));
+    const page = Math.max(1, Number(query.get("page") || 1));
+
+    const cookiePageSize = clampPageSize(getCookie(PAGE_SIZE_COOKIE) || 10);
+    const pageSizeFromUrl = query.get("pageSize");
+    const pageSize = pageSizeFromUrl
+      ? clampPageSize(pageSizeFromUrl)
+      : cookiePageSize;
+
+    // If URL provided page size, sync it back to cookie
+    setCookie(PAGE_SIZE_COOKIE, String(pageSize));
+
+    const q = (query.get("q") || "").trim();
+    const country = (query.get("country") || "").trim();
+    const sort = (query.get("sort") || "name").trim();
+    const dir = (query.get("dir") || "asc").trim();
+
+    const root = htmlToEl(`
+      <section>
+        <div class="list-controls">
+          <form id="filters" class="filters">
+            <input class="input" type="text" name="q" placeholder="Search name or country" value="${escapeHtml(
+              q
+            )}" />
+            <input class="input input-sm" type="text" name="country" placeholder="Country filter (exact)" value="${escapeHtml(
+              country
+            )}" />
+            <select class="input input-sm" name="sort">
+              ${option("name", "Name", sort)}
+              ${option("country", "Country", sort)}
+              ${option("age", "Age", sort)}
+              ${option("worldRank", "World Rank", sort)}
+              ${option("winsPga", "PGA Wins", sort)}
+              ${option("majorWins", "Majors", sort)}
+              ${option("fedexRank", "FedEx Rank", sort)}
+              ${option("updatedAt", "Updated", sort)}
+            </select>
+            <select class="input input-sm" name="dir">
+              ${option("asc", "Asc", dir)}
+              ${option("desc", "Desc", dir)}
+            </select>
+            <button class="btn" type="submit">Apply</button>
+            <a class="btn btn-ghost" href="#list">Reset</a>
+          </form>
+
+          <div class="page-size">
+            <label for="pageSizeSelect">Page size</label>
+            <select id="pageSizeSelect" class="input input-sm">
+              ${ALLOWED_PAGE_SIZES.map((n) => {
+                const selected = n === pageSize ? "selected" : "";
+                return `<option value="${n}" ${selected}>${n}</option>`;
+              }).join("")}
+            </select>
+          </div>
+        </div>
+
+        <div id="list" class="cards"></div>
+        <div id="pager" class="pager"></div>
+      </section>
+    `);
+
+    app.appendChild(root);
+
+    // Fetch data
+    let data;
+    try {
+      data = await store.list({ page, pageSize, q, country, sort, dir });
+    } catch (e) {
+      setFlash("Failed to load golfers. Please try again.", "error");
       return;
     }
 
-    const { items, total, totalPages, page: currentPage } = res.data;
-    recordsBadge.textContent = `Records: ${formatNumber(total)}`;
+    const items = data.items || [];
+    const meta = data.meta || {};
+    const total = meta.total || 0;
 
-    tableWrap.innerHTML = "";
-    tableWrap.appendChild(buildTable(items, onNavigateToEdit, currentPage));
+    const list = qs("#list", root);
+    const pager = qs("#pager", root);
 
-    pagerWrap.innerHTML = "";
-    pagerWrap.appendChild(buildPager({ currentPage, totalPages }));
-  })();
+    if (!items.length) {
+      list.innerHTML = `
+        <div class="empty">
+          <h3>No results</h3>
+          <p>Try adjusting your search or filters.</p>
+        </div>
+      `;
+    } else {
+      list.innerHTML = "";
+      for (const g of items) {
+        const card = htmlToEl(`
+          <article class="card">
+            <img class="thumb" src="${escapeHtml(
+              g.imageUrl || "assets/images/placeholder.png"
+            )}" alt="${escapeHtml(g.name)}" />
+            <div class="card-body">
+              <h3>${escapeHtml(g.name)}</h3>
+              <div class="meta">
+                <div><strong>Country:</strong> ${escapeHtml(g.country)}</div>
+                <div><strong>Age:</strong> ${fmt(g.age)}</div>
+                <div><strong>World Rank:</strong> ${fmt(g.worldRank)}</div>
+                <div><strong>PGA Wins:</strong> ${fmt(g.winsPga)}</div>
+                <div><strong>Majors:</strong> ${fmt(g.majorWins)}</div>
+                <div><strong>FedEx Rank:</strong> ${fmt(g.fedexRank)}</div>
+              </div>
+              <div class="actions">
+                <a class="btn btn-small" href="#edit/${g.id}">Edit</a>
+                <button class="btn btn-small btn-danger" data-del="${
+                  g.id
+                }">Delete</button>
+              </div>
+            </div>
+          </article>
+        `);
 
-  return wrap;
-}
+        const img = card.querySelector("img.thumb");
+        safeImg(img);
 
-function buildTable(records, onNavigateToEdit, currentPage) {
-  const table = el("table");
-  const thead = el("thead");
-  const trh = el("tr");
-
-  
-  const headers = ["Image", "Name", "Country", "Age", "World Rank", "PGA Wins", "Major Wins", "FedEx Rank", "Actions"];
-  headers.forEach(h => trh.appendChild(el("th", {}, [h])));
-  thead.appendChild(trh);
-
-  const tbody = el("tbody");
-
-  if (records.length === 0) {
-    const tr = el("tr", {}, [
-
-      el("td", { colspan: "9" }, ["No golfers yet. Click “Add Golfer” to create one."])
-    ]);
-    tbody.appendChild(tr);
-  } else {
-    for (const r of records) {
-  
-      const img = el("img", {
-        src: r.imageUrl || "/assets/images/placeholder.png",
-        alt: r.name ? `${r.name} photo` : "Golfer photo",
-        loading: "lazy",
-        style: "width:64px; height:48px; object-fit:cover; border-radius:6px; display:block;"
-      });
-      img.onerror = () => {
-        img.onerror = null; // prevent infinite loop if placeholder missing
-        img.src = "/assets/images/placeholder.png";
-      };
-
-      const tr = el("tr", {}, [
-  
-        el("td", {}, [img]),
-
-        el("td", {}, [r.name]),
-        el("td", {}, [r.country]),
-        el("td", {}, [String(r.age)]),
-        el("td", {}, [String(r.worldRank)]),
-        el("td", {}, [String(r.winsPga)]),
-        el("td", {}, [String(r.majorWins)]),
-        el("td", {}, [r.fedexRank == null ? "—" : String(r.fedexRank)]),
-        el("td", {}, [
-          el("button", {
-            class: "btn btn-ghost btn-sm",
-            type: "button",
-            onclick: () => onNavigateToEdit(r.id)
-          }, ["Edit"]),
-          document.createTextNode(" "),
-          el("button", {
-            class: "btn btn-danger btn-sm",
-            type: "button",
-            onclick: async () => {
-              const ok = await confirmModal({
-                title: "Delete golfer?",
-                message: `This will permanently remove "${r.name}".`,
-                confirmText: "Delete"
-              });
-              if (!ok) return;
-
-              const removed = await store.remove(r.id);
-              if (!removed.ok) {
-                toast({ title: "Delete failed", message: removed.error, variant: "danger" });
-                return;
-              }
-
-              toast({ title: "Deleted", message: `"${r.name}" was removed.`, variant: "danger" });
-
-              window.location.hash = `#list?page=${encodeURIComponent(currentPage)}`;
-              window.dispatchEvent(new HashChangeEvent("hashchange"));
-            }
-          }, ["Delete"])
-        ])
-      ]);
-
-      tbody.appendChild(tr);
+        list.appendChild(card);
+      }
     }
-  }
 
-  table.appendChild(thead);
-  table.appendChild(tbody);
-  return table;
+    // Delete handling with confirmation
+    list.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button[data-del]");
+      if (!btn) return;
+
+      const id = btn.getAttribute("data-del");
+      const ok = window.confirm("Delete this record? This cannot be undone.");
+      if (!ok) return;
+
+      try {
+        await store.remove(id);
+        setFlash("Deleted.", "success");
+        // Refresh current page, but if page becomes empty, go back one page
+        const newTotal = Math.max(0, total - 1);
+        const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
+        const nextPage = Math.min(page, maxPage);
+
+        window.location.hash = buildHash("list", {
+          page: nextPage,
+          pageSize,
+          q,
+          country,
+          sort,
+          dir,
+        });
+      } catch (e) {
+        setFlash("Delete failed. Please try again.", "error");
+      }
+    });
+
+    // Filters submit
+    const filters = qs("#filters", root);
+    filters.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(filters);
+      const nextQ = (fd.get("q") || "").toString().trim();
+      const nextCountry = (fd.get("country") || "").toString().trim();
+      const nextSort = (fd.get("sort") || "name").toString();
+      const nextDir = (fd.get("dir") || "asc").toString();
+
+      window.location.hash = buildHash("list", {
+        page: 1,
+        pageSize,
+        q: nextQ,
+        country: nextCountry,
+        sort: nextSort,
+        dir: nextDir,
+      });
+    });
+
+    // Page size change
+    const pageSizeSelect = qs("#pageSizeSelect", root);
+    pageSizeSelect.addEventListener("change", () => {
+      const next = clampPageSize(pageSizeSelect.value);
+      setCookie(PAGE_SIZE_COOKIE, String(next));
+      window.location.hash = buildHash("list", {
+        page: 1,
+        pageSize: next,
+        q,
+        country,
+        sort,
+        dir,
+      });
+    });
+
+    // Pager rendering
+    renderPager({
+      pagerEl: pager,
+      page,
+      pageSize,
+      total,
+      q,
+      country,
+      sort,
+      dir,
+    });
+  },
+};
+
+function renderPager({ pagerEl, page, pageSize, total, q, country, sort, dir }) {
+  pagerEl.innerHTML = "";
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const info = htmlToEl(
+    `<div class="pager-info">Page ${page} of ${totalPages} (${total} total)</div>`
+  );
+  pagerEl.appendChild(info);
+
+  const controls = htmlToEl(`<div class="pager-controls"></div>`);
+  pagerEl.appendChild(controls);
+
+  const prev = htmlToEl(
+    `<a class="btn btn-small ${page <= 1 ? "disabled" : ""}" href="${buildHash(
+      "list",
+      { page: Math.max(1, page - 1), pageSize, q, country, sort, dir }
+    )}">Prev</a>`
+  );
+
+  const next = htmlToEl(
+    `<a class="btn btn-small ${
+      page >= totalPages ? "disabled" : ""
+    }" href="${buildHash("list", {
+      page: Math.min(totalPages, page + 1),
+      pageSize,
+      q,
+      country,
+      sort,
+      dir,
+    })}">Next</a>`
+  );
+
+  if (page <= 1) prev.addEventListener("click", (e) => e.preventDefault());
+  if (page >= totalPages) next.addEventListener("click", (e) => e.preventDefault());
+
+  controls.appendChild(prev);
+  controls.appendChild(next);
 }
 
-function buildPager({ currentPage, totalPages }) {
-  const pageNum = Number(currentPage) || 1;
-  const totalNum = Number(totalPages) || 1;
+function option(value, label, current) {
+  const sel = value === current ? "selected" : "";
+  return `<option value="${escapeHtml(value)}" ${sel}>${escapeHtml(label)}</option>`;
+}
 
-  const prevPage = Math.max(1, pageNum - 1);
-  const nextPage = Math.min(totalNum, pageNum + 1);
+function fmt(v) {
+  if (v === null || v === undefined || v === "") return "-";
+  return String(v);
+}
 
-  const prevDisabled = pageNum <= 1;
-  const nextDisabled = pageNum >= totalNum;
-
-  const prevLink = el(
-    "a",
-    {
-      class: `btn btn-ghost btn-sm${prevDisabled ? " disabled" : ""}`,
-      href: `#list?page=${encodeURIComponent(prevPage)}`,
-      "aria-disabled": prevDisabled ? "true" : "false",
-      onclick: (e) => {
-        if (!prevDisabled) return;
-        e.preventDefault();
-      },
-    },
-    ["← Previous"]
-  );
-
-  const nextLink = el(
-    "a",
-    {
-      class: `btn btn-ghost btn-sm${nextDisabled ? " disabled" : ""}`,
-      href: `#list?page=${encodeURIComponent(nextPage)}`,
-      "aria-disabled": nextDisabled ? "true" : "false",
-      onclick: (e) => {
-        if (!nextDisabled) return;
-        e.preventDefault();
-      },
-    },
-    ["Next →"]
-  );
-
-  const indicator = el("span", { class: "small", style: "align-self:center;" }, [
-    `Page ${pageNum} of ${Math.max(totalNum, 1)}`
-  ]);
-
-  return el(
-    "div",
-    { style: "display:flex; gap:10px; align-items:center; justify-content:flex-end;" },
-    [prevLink, nextLink, indicator]
-  );
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }

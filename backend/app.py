@@ -1,403 +1,251 @@
-from __future__ import annotations
-
 import os
-import time
-import uuid
-from typing import Any, Dict, List, Optional, Tuple
-
-from flask import Flask, jsonify, request, send_from_directory
+from datetime import datetime
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import select, func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import or_, func
 
-from db import SessionLocal, engine
-from models import Base, Golfer
+from db import db
+from models import Golfer
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-PAGE_SIZE = 10  
-
-app = Flask(__name__)
-CORS(app)
-
-# -----------------------------
-# Frontend serving
-# -----------------------------
-FRONTEND_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
-ASSETS_DIR = os.path.join(FRONTEND_DIR, "assets")
-
-
-@app.route("/")
-def serve_index():
-    return send_from_directory(FRONTEND_DIR, "index.html")
+DEFAULT_PAGE_SIZE = 10
+ALLOWED_PAGE_SIZES = {5, 10, 20, 50}
+ALLOWED_SORT_FIELDS = {
+    "name": Golfer.name,
+    "country": Golfer.country,
+    "age": Golfer.age,
+    "worldRank": Golfer.worldRank,
+    "winsPga": Golfer.winsPga,
+    "majorWins": Golfer.majorWins,
+    "fedexRank": Golfer.fedexRank,
+    "updatedAt": Golfer.updatedAt,
+}
 
 
-@app.route("/assets/<path:filename>")
-def serve_assets(filename):
-    return send_from_directory(ASSETS_DIR, filename)
-
-
-# -----------------------------
-# Helpers
-# -----------------------------
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def _to_int(v: Any) -> Optional[int]:
+def _to_int(value, default):
     try:
-        if v is None:
-            return None
-        if isinstance(v, bool):
-            return None
-        return int(v)
-    except Exception:
-        return None
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
-def _error(status: int, message: str, details: Optional[List[str]] = None):
-    payload: Dict[str, Any] = {"error": message}
-    if details:
-        payload["details"] = details
-    return jsonify(payload), status
+def _normalize_dir(value: str) -> str:
+    v = (value or "asc").lower()
+    return "desc" if v == "desc" else "asc"
 
 
-def _validate(payload: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]:
-    errors: List[str] = []
-    name = (payload.get("name") or "").strip()
-    country = (payload.get("country") or "").strip()
-    age = _to_int(payload.get("age"))
-    world_rank = _to_int(payload.get("worldRank"))
-    wins_pga = _to_int(payload.get("winsPga"))
-    major_wins = _to_int(payload.get("majorWins"))
-    fedex_rank = payload.get("fedexRank")
-    image_url = (payload.get("imageUrl") or "").strip()
-    fedex_rank = None if fedex_rank in ("", "null") else _to_int(fedex_rank)
-
-    if not name:
-        errors.append("Name is required.")
-    if not country:
-        errors.append("Country is required.")
-
-    if age is None or age < 16 or age > 80:
-        errors.append("Age must be 16–80.")
-    if world_rank is None or world_rank < 1 or world_rank > 500:
-        errors.append("World Rank must be 1–500.")
-    if wins_pga is None or wins_pga < 0:
-        errors.append("PGA Wins must be 0 or higher.")
-    if major_wins is None or major_wins < 0:
-        errors.append("Major Wins must be 0 or higher.")
-    if fedex_rank is not None and (fedex_rank < 1 or fedex_rank > 250):
-        errors.append("FedEx Rank must be 1–250 if provided.")
-    if not image_url:
-        errors.append("Image URL is required.")
-
-    normalized = {
-        "name": name,
-        "country": country,
-        "age": age,
-        "worldRank": world_rank,
-        "winsPga": wins_pga,
-        "majorWins": major_wins,
-        "fedexRank": fedex_rank,
-        "imageUrl": image_url,
-    }
-    return (len(errors) == 0), errors, normalized
+def _page_size(value) -> int:
+    ps = _to_int(value, DEFAULT_PAGE_SIZE)
+    if ps not in ALLOWED_PAGE_SIZES:
+        return DEFAULT_PAGE_SIZE
+    return ps
 
 
-def _seed_records() -> List[Dict[str, Any]]:
-    now = _now_ms()
+def _seed_db_if_needed():
+    count = db.session.query(func.count(Golfer.id)).scalar() or 0
+    if count >= 30:
+        return
 
-    def mk(
-        name: str,
-        country: str,
-        age: int,
-        world_rank: int,
-        wins_pga: int,
-        major_wins: int,
-        fedex_rank: Optional[int],
-        image_url: Optional[str] = None,
-    ):
-        # Always provide a valid image URL (meets rubric + avoids seed failures)
-        image_url = image_url or "https://placehold.co/300x200?text=Golfer"
+    # Seed from JSON file shipped with the app.
+    seed_path = os.path.join(os.path.dirname(__file__), "data", "golfers.json")
+    if not os.path.exists(seed_path):
+        return
 
-        return {
-            "id": f"g_{uuid.uuid4().hex}",
-            "name": name,
-            "country": country,
-            "age": age,
-            "worldRank": world_rank,
-            "winsPga": wins_pga,
-            "majorWins": major_wins,
-            "fedexRank": fedex_rank,
-            "updatedAt": now,
-            "imageUrl": image_url,
-        }
+    import json
 
-    return [
-        mk("Scottie Scheffler", "USA", 27, 1, 9, 2, 1, "https://placehold.co/300x200?text=Scheffler"),
-        mk("Rory McIlroy", "NIR", 34, 2, 24, 4, 6),
-        mk("Jon Rahm", "ESP", 29, 3, 11, 2, 9),
-        mk("Xander Schauffele", "USA", 30, 4, 7, 0, 3),
-        mk("Viktor Hovland", "NOR", 26, 5, 6, 0, 2),
-        mk("Patrick Cantlay", "USA", 31, 6, 8, 0, 7),
-        mk("Collin Morikawa", "USA", 27, 7, 6, 2, 10),
-        mk("Ludvig Åberg", "SWE", 24, 8, 1, 0, 14),
-        mk("Justin Thomas", "USA", 30, 9, 15, 2, 18),
-        mk("Jordan Spieth", "USA", 30, 10, 13, 3, 22),
-        mk("Brooks Koepka", "USA", 33, 11, 9, 5, 30),
-        mk("Dustin Johnson", "USA", 39, 12, 24, 2, 40),
-        mk("Max Homa", "USA", 33, 13, 6, 0, 15),
-        mk("Tony Finau", "USA", 34, 14, 6, 0, 16),
-        mk("Tommy Fleetwood", "ENG", 32, 15, 0, 0, 19),
-        mk("Cameron Smith", "AUS", 30, 16, 6, 1, 25),
-        mk("Hideki Matsuyama", "JPN", 31, 17, 9, 1, 20),
-        mk("Wyndham Clark", "USA", 30, 18, 3, 1, 8),
-        mk("Matt Fitzpatrick", "ENG", 29, 19, 2, 1, 24),
-        mk("Tyrrell Hatton", "ENG", 32, 20, 1, 0, 27),
-        mk("Jason Day", "AUS", 36, 21, 13, 1, 35),
-        mk("Bryson DeChambeau", "USA", 30, 22, 8, 1, 29),
-        mk("Sungjae Im", "KOR", 25, 23, 2, 0, 17),
-        mk("Sam Burns", "USA", 27, 24, 5, 0, 21),
-        mk("Shane Lowry", "IRL", 36, 25, 2, 1, 26),
-        mk("Keegan Bradley", "USA", 37, 26, 6, 1, 23),
-        mk("Justin Rose", "ENG", 43, 27, 11, 1, 38),
-        mk("Rickie Fowler", "USA", 35, 28, 6, 0, 33),
-        mk("Corey Conners", "CAN", 32, 29, 2, 0, 28),
-        mk("Sepp Straka", "AUT", 30, 30, 2, 0, 31),
-    ]
+    with open(seed_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    for item in data:
+        golfer = Golfer(
+            name=item.get("name", "").strip(),
+            country=item.get("country", "").strip(),
+            age=_to_int(item.get("age"), None),
+            worldRank=_to_int(item.get("worldRank"), None),
+            winsPga=_to_int(item.get("winsPga"), None),
+            majorWins=_to_int(item.get("majorWins"), None),
+            fedexRank=_to_int(item.get("fedexRank"), None),
+            imageUrl=(item.get("imageUrl") or "").strip() or None,
+            updatedAt=datetime.utcnow(),
+        )
+        db.session.add(golfer)
+
+    db.session.commit()
 
 
+def create_app():
+    app = Flask(__name__)
+    CORS(app)
 
-def init_db_and_seed() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+        "DATABASE_URL", "sqlite:///local.db"
+    )
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    with SessionLocal() as db:
-        count = db.scalar(select(func.count()).select_from(Golfer)) or 0
-        if count >= 30:
-            return
+    db.init_app(app)
 
-        seed = _seed_records()
-        golfers: List[Golfer] = []
-        for r in seed:
-            golfers.append(
-                Golfer(
-                    id=r["id"],
-                    name=r["name"],
-                    country=r["country"],
-                    age=r["age"],
-                    world_rank=r["worldRank"],
-                    wins_pga=r["winsPga"],
-                    major_wins=r["majorWins"],
-                    fedex_rank=r["fedexRank"],
-                    image_url=r["imageUrl"],      
-                    updated_at=r["updatedAt"],
+    with app.app_context():
+        reset = os.environ.get("RESET_DB", "").strip() == "1"
+        if reset:
+            db.drop_all()
+        db.create_all()
+        _seed_db_if_needed()
+
+    @app.get("/api/health")
+    def health():
+        return jsonify({"ok": True})
+
+    @app.get("/api/golfers")
+    def list_golfers():
+        # Query params
+        page = max(1, _to_int(request.args.get("page"), 1))
+        page_size = _page_size(request.args.get("pageSize"))
+
+        q = (request.args.get("q") or "").strip()
+        country = (request.args.get("country") or "").strip()
+
+        sort_key = (request.args.get("sort") or "name").strip()
+        sort_dir = _normalize_dir(request.args.get("dir"))
+
+        # Base query
+        query = db.session.query(Golfer)
+
+        # Search/filtering
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                or_(
+                    Golfer.name.ilike(like),
+                    Golfer.country.ilike(like),
                 )
-
             )
-        db.add_all(golfers)
-        db.commit()
 
+        if country:
+            query = query.filter(Golfer.country == country)
 
-# Run initialization on startup
-try:
-    init_db_and_seed()
-except Exception as e:
-    print("DB init/seed failed:", repr(e))
+        # Sorting
+        sort_col = ALLOWED_SORT_FIELDS.get(sort_key, Golfer.name)
+        if sort_dir == "desc":
+            query = query.order_by(sort_col.desc())
+        else:
+            query = query.order_by(sort_col.asc())
 
+        # Totals for paging
+        total = query.count()
 
-def golfer_to_dict(g: Golfer) -> Dict[str, Any]:
-    return {
-        "id": g.id,
-        "name": g.name,
-        "country": g.country,
-        "age": g.age,
-        "worldRank": g.world_rank,
-        "winsPga": g.wins_pga,
-        "majorWins": g.major_wins,
-        "fedexRank": g.fedex_rank,
-        "updatedAt": g.updated_at,
-        "imageUrl": g.image_url,
-    }
-
-
-# -----------------------------
-# API Routes
-# -----------------------------
-@app.get("/api/health")
-def health():
-    return jsonify({"ok": True})
-
-
-@app.get("/api/golfers")
-def list_golfers():
-    page = _to_int(request.args.get("page")) or 1
-    page_size = _to_int(request.args.get("pageSize")) or PAGE_SIZE
-    page_size = PAGE_SIZE 
-
-    try:
-        with SessionLocal() as db:
-            total = db.scalar(select(func.count()).select_from(Golfer)) or 0
-            total_pages = max(1, (total + page_size - 1) // page_size)
-            page = min(max(1, page), total_pages)
-
-            offset = (page - 1) * page_size
-
-            stmt = (
-                select(Golfer)
-                .order_by(Golfer.world_rank.asc())
-                .offset(offset)
-                .limit(page_size)
-            )
-            items = [golfer_to_dict(g) for g in db.scalars(stmt).all()]
+        # Page
+        offset = (page - 1) * page_size
+        rows = query.offset(offset).limit(page_size).all()
 
         return jsonify(
             {
-                "items": items,
-                "page": page,
-                "pageSize": page_size,
-                "total": total,
-                "totalPages": total_pages,
+                "items": [g.to_dict() for g in rows],
+                "meta": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "total": total,
+                    "q": q,
+                    "country": country,
+                    "sort": sort_key,
+                    "dir": sort_dir,
+                    "allowedPageSizes": sorted(list(ALLOWED_PAGE_SIZES)),
+                },
             }
         )
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
+
+    @app.get("/api/golfers/<int:golfer_id>")
+    def get_golfer(golfer_id: int):
+        golfer = db.session.get(Golfer, golfer_id)
+        if not golfer:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(golfer.to_dict())
+
+    @app.post("/api/golfers")
+    def create_golfer():
+        data = request.get_json(force=True, silent=True) or {}
+
+        name = (data.get("name") or "").strip()
+        country = (data.get("country") or "").strip()
+        image_url = (data.get("imageUrl") or "").strip() or None
+
+        if not name:
+            return jsonify({"error": "Name is required"}), 400
+        if not country:
+            return jsonify({"error": "Country is required"}), 400
+
+        golfer = Golfer(
+            name=name,
+            country=country,
+            age=_to_int(data.get("age"), None),
+            worldRank=_to_int(data.get("worldRank"), None),
+            winsPga=_to_int(data.get("winsPga"), None),
+            majorWins=_to_int(data.get("majorWins"), None),
+            fedexRank=_to_int(data.get("fedexRank"), None),
+            imageUrl=image_url,
+            updatedAt=datetime.utcnow(),
+        )
+        db.session.add(golfer)
+        db.session.commit()
+
+        return jsonify(golfer.to_dict()), 201
+
+    @app.put("/api/golfers/<int:golfer_id>")
+    def update_golfer(golfer_id: int):
+        golfer = db.session.get(Golfer, golfer_id)
+        if not golfer:
+            return jsonify({"error": "Not found"}), 404
+
+        data = request.get_json(force=True, silent=True) or {}
+
+        name = (data.get("name") or "").strip()
+        country = (data.get("country") or "").strip()
+        image_url = (data.get("imageUrl") or "").strip() or None
+
+        if not name:
+            return jsonify({"error": "Name is required"}), 400
+        if not country:
+            return jsonify({"error": "Country is required"}), 400
+
+        golfer.name = name
+        golfer.country = country
+        golfer.age = _to_int(data.get("age"), None)
+        golfer.worldRank = _to_int(data.get("worldRank"), None)
+        golfer.winsPga = _to_int(data.get("winsPga"), None)
+        golfer.majorWins = _to_int(data.get("majorWins"), None)
+        golfer.fedexRank = _to_int(data.get("fedexRank"), None)
+        golfer.imageUrl = image_url
+        golfer.updatedAt = datetime.utcnow()
+
+        db.session.commit()
+        return jsonify(golfer.to_dict())
+
+    @app.delete("/api/golfers/<int:golfer_id>")
+    def delete_golfer(golfer_id: int):
+        golfer = db.session.get(Golfer, golfer_id)
+        if not golfer:
+            return jsonify({"error": "Not found"}), 404
+
+        db.session.delete(golfer)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    @app.get("/api/stats")
+    def stats():
+        total = db.session.query(func.count(Golfer.id)).scalar() or 0
+        avg_world_rank = (
+            db.session.query(func.avg(Golfer.worldRank)).filter(Golfer.worldRank != None).scalar()  # noqa: E711
+        )
+
+        return jsonify(
+            {
+                "totalRecords": total,
+                "avgWorldRank": float(avg_world_rank) if avg_world_rank is not None else None,
+            }
+        )
+
+    return app
 
 
-@app.get("/api/golfers/<string:golfer_id>")
-def get_golfer(golfer_id: str):
-    try:
-        with SessionLocal() as db:
-            g = db.get(Golfer, golfer_id)
-            if not g:
-                return _error(404, "Golfer not found.")
-            return jsonify(golfer_to_dict(g))
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
-
-
-@app.post("/api/golfers")
-def create_golfer():
-    payload = request.get_json(silent=True) or {}
-    ok, errors, normalized = _validate(payload)
-    if not ok:
-        return _error(400, "Validation failed.", errors)
-
-    new_id = f"g_{uuid.uuid4().hex}"
-    now = _now_ms()
-
-    try:
-        with SessionLocal() as db:
-            g = Golfer(
-                id=new_id,
-                name=normalized["name"],
-                country=normalized["country"],
-                age=normalized["age"],
-                world_rank=normalized["worldRank"],
-                wins_pga=normalized["winsPga"],
-                major_wins=normalized["majorWins"],
-                fedex_rank=normalized["fedexRank"],
-                image_url=normalized["imageUrl"],
-                updated_at=now,
-            )
-            db.add(g)
-            db.commit()
-            db.refresh(g)
-            return jsonify(golfer_to_dict(g)), 201
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
-
-
-@app.put("/api/golfers/<string:golfer_id>")
-def update_golfer(golfer_id: str):
-    payload = request.get_json(silent=True) or {}
-    ok, errors, normalized = _validate(payload)
-    if not ok:
-        return _error(400, "Validation failed.", errors)
-
-    try:
-        with SessionLocal() as db:
-            g = db.get(Golfer, golfer_id)
-            if not g:
-                return _error(404, "Golfer not found.")
-
-            g.name = normalized["name"]
-            g.country = normalized["country"]
-            g.age = normalized["age"]
-            g.world_rank = normalized["worldRank"]
-            g.wins_pga = normalized["winsPga"]
-            g.major_wins = normalized["majorWins"]
-            g.fedex_rank = normalized["fedexRank"]
-            g.image_url = normalized["imageUrl"]
-            g.updated_at = _now_ms()
-
-            db.commit()
-            db.refresh(g)
-            return jsonify(golfer_to_dict(g))
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
-
-
-@app.delete("/api/golfers/<string:golfer_id>")
-def delete_golfer(golfer_id: str):
-    try:
-        with SessionLocal() as db:
-            g = db.get(Golfer, golfer_id)
-            if not g:
-                return _error(404, "Golfer not found.")
-            db.delete(g)
-            db.commit()
-            return jsonify({"ok": True})
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
-
-
-@app.get("/api/stats")
-def stats():
-    try:
-        with SessionLocal() as db:
-            total = db.scalar(select(func.count()).select_from(Golfer)) or 0
-            if total == 0:
-                return jsonify(
-                    {
-                        "total": 0,
-                        "avgWorldRank": 0,
-                        "totalWins": 0,
-                        "majorWinners": 0,
-                        "topCountry": None,
-                        "topCountryCount": 0,
-                    }
-                )
-
-            avg_world_rank = db.scalar(select(func.avg(Golfer.world_rank))) or 0
-            total_wins = db.scalar(select(func.sum(Golfer.wins_pga))) or 0
-            major_winners = db.scalar(select(func.count()).where(Golfer.major_wins > 0)) or 0
-
-            top_row = db.execute(
-                select(Golfer.country, func.count().label("n"))
-                .group_by(Golfer.country)
-                .order_by(func.count().desc())
-                .limit(1)
-            ).first()
-
-            top_country = top_row[0] if top_row else None
-            top_country_count = int(top_row[1]) if top_row else 0
-
-            return jsonify(
-                {
-                    "total": total,
-                    "avgWorldRank": float(avg_world_rank),
-                    "totalWins": int(total_wins),
-                    "majorWinners": int(major_winners),
-                    "topCountry": top_country,
-                    "topCountryCount": top_country_count,
-                }
-            )
-    except SQLAlchemyError as e:
-        return _error(500, "Database error.", [str(e)])
-
+app = create_app()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5050"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
