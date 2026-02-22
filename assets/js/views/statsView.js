@@ -58,7 +58,7 @@ export const statsView = {
 
           <div class="kpi">
             <div class="kpi-label">Total PGA wins</div>
-            <div class="kpi-value">${stats.totalPgaWins ?? "-"}</div>
+            <div class="kpi-value">${stats.totalWins ?? stats.totalPgaWins ?? "-"}</div>
           </div>
         </div>
       </section>

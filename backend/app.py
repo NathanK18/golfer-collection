@@ -361,6 +361,7 @@ def create_app():
                 "totalRecords": total,
                 "avgWorldRank": avg_world_rank_val,
                 "totalWins": total_wins_val,
+                "totalPgaWins": total_wins_val,
                 "totalMajorWins": total_major_wins_val, 
                 "majorWinners": major_winners,
                 "topCountry": top_country,
