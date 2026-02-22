@@ -92,7 +92,6 @@ def validate_and_build_golfer_fields(data: Dict[str, Any]) -> Optional[Dict[str,
     if not image_url:
         return None
 
-    # These are nullable=False in your models.py
     if age is None or world_rank is None or wins_pga is None or major_wins is None:
         return None
 
@@ -214,12 +213,11 @@ def create_app():
 
             offset = (page - 1) * page_size
             stmt = stmt.offset(offset).limit(page_size)
-
             rows = session.execute(stmt).scalars().all()
 
         total_pages = max(1, int(math.ceil(total / page_size))) if page_size > 0 else 1
 
-        # Important: this shape matches your current frontend
+        # Compatibility: return BOTH shapes (top-level + meta)
         return jsonify(
             {
                 "items": [golfer_to_dict(g) for g in rows],
@@ -227,6 +225,17 @@ def create_app():
                 "totalPages": total_pages,
                 "page": page,
                 "pageSize": page_size,
+                "meta": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "total": total,
+                    "totalPages": total_pages,
+                    "q": q,
+                    "country": country,
+                    "sort": sort_key,
+                    "dir": sort_dir,
+                    "allowedPageSizes": sorted(list(ALLOWED_PAGE_SIZES)),
+                },
             }
         )
 
@@ -328,10 +337,11 @@ def create_app():
             top_country = top_country_row[0] if top_country_row else None
             top_country_count = int(top_country_row[1]) if top_country_row else 0
 
-        # Important: this shape matches your current frontend
+        # Compatibility: return BOTH shapes used by different frontend versions
         return jsonify(
             {
                 "total": total,
+                "totalRecords": total,
                 "avgWorldRank": avg_world_rank_val,
                 "totalWins": total_wins_val,
                 "majorWinners": major_winners,
