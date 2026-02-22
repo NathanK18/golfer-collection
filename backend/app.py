@@ -152,7 +152,7 @@ def create_app():
       #      Base.metadata.drop_all(bind=conn)
       #  Base.metadata.create_all(bind=conn) 
 
-    seed_db_if_needed()
+    # seed_db_if_needed()
 
     @app.get("/")
     def index():
