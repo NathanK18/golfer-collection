@@ -25,6 +25,8 @@ ALLOWED_SORT_FIELDS = {
     "updatedAt": "updated_at",
 }
 
+_db_ready = False
+
 
 def now_epoch_ms() -> int:
     return int(time.time() * 1000)
@@ -140,19 +142,37 @@ def seed_db_if_needed():
         session.commit()
 
 
+def ensure_db_ready():
+    global _db_ready
+    if _db_ready:
+        return
+
+    with engine.begin() as conn:
+        reset = (os.environ.get("RESET_DB") or "").strip() == "1"
+        if reset:
+            Base.metadata.drop_all(bind=conn)
+        Base.metadata.create_all(bind=conn)
+
+    seed_db_if_needed()
+    _db_ready = True
+
+
 def create_app():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
     app = Flask(__name__)
     CORS(app)
 
-    #with engine.begin() as conn:
-     #   reset = (os.environ.get("RESET_DB") or "").strip() == "1"
-     #   if reset:
-      #      Base.metadata.drop_all(bind=conn)
-      #  Base.metadata.create_all(bind=conn) 
+    @app.before_request
+    def _init_once():
+        # Make sure the app can boot quickly for Render's port scan/health checks.
+        # Initialize the DB on the first real request.
+        ensure_db_ready()
 
-    # seed_db_if_needed()
+    @app.get("/healthz")
+    def healthz():
+        # Fast endpoint for platform health probes
+        return jsonify({"ok": True})
 
     @app.get("/")
     def index():
@@ -192,9 +212,7 @@ def create_app():
 
             if q:
                 like = f"%{q}%"
-                stmt = stmt.where(
-                    or_(Golfer.name.ilike(like), Golfer.country.ilike(like))
-                )
+                stmt = stmt.where(or_(Golfer.name.ilike(like), Golfer.country.ilike(like)))
 
             if country:
                 stmt = stmt.where(Golfer.country == country)
@@ -267,7 +285,6 @@ def create_app():
             session.add(g)
             session.commit()
             session.refresh(g)
-
             return jsonify(golfer_to_dict(g)), 201
 
     @app.put("/api/golfers/<string:golfer_id>")
