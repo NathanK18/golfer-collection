@@ -40,3 +40,5 @@ The primary variable being DATABASE_URL
 The value is configured in the render dashboard 
 No database credentials or secrets are commited to the repo 
 
+Application Architecture 
+Browser -> Static Frontend -> Fetch API request -> Flask REST API -> SQLAlchemy -> PostgreSQL Database 
